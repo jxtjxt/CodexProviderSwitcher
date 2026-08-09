@@ -1,5 +1,220 @@
 # Codex Provider Switcher
 
+[简体中文](#简体中文) | [English](#english)
+
+## 简体中文
+
+Codex Provider Switcher 是一个 Windows 图形界面工具，用于在以下模式之间切换 Codex Desktop：
+
+- 原始/Native Codex 配置；
+- 通过 DeepSeek 原生 Responses API 使用 DeepSeek V4 Flash；
+- 任意实现 Codex 兼容 Responses API 的第三方 Provider。
+
+### 安全设计
+
+- API key 使用 Windows DPAPI 按当前 Windows 用户加密。
+- Codex 通过 command-backed authentication 获取 key；key 不会以明文写入 `config.toml`。
+- 工具只管理 provider/model/auth/catalog 字段和自己创建的 `model_providers.cps_*` 配置段。
+- 原有 MCP、Computer Use、插件、项目 trust、sandbox、hooks 和 features 设置均保留。
+- 恢复 Native 时，删除本工具创建的 Provider 段，并恢复第一次切换前记录的 Provider 字段。
+- 远程 Provider 必须使用 HTTPS；只有本机回环地址允许 HTTP。
+- 拒绝跨域重定向，防止 API key 被转发到其他主机。
+
+### 当前功能范围
+
+已支持：
+
+- DeepSeek V4 Flash；
+- 自定义 Responses-compatible API；
+- `/models` 模型发现；
+- 最小 Responses 兼容性测试；
+- DPAPI 加密 API key；
+- 原子配置写入和字段级恢复；
+- 请求重启 Codex Desktop。
+
+当前 MVP 不支持：
+
+- Chat Completions 到 Responses 的协议转换；
+- 账号池或额度轮换；
+- 导入 Claude、Cursor、Grok 或 ChatGPT 凭据；
+- 跨 Provider 迁移对话；
+- 常驻本地代理。
+
+### 构建
+
+要求：Windows 和 Python 3.11 或更高版本。
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install pyinstaller==6.16.0
+.venv\Scripts\pyinstaller.exe --noconfirm --clean --onefile --windowed --name CodexProviderSwitcher CodexProviderSwitcher.pyw
+```
+
+输出文件：
+
+```text
+dist\CodexProviderSwitcher.exe
+```
+
+### 测试
+
+```powershell
+python -m unittest discover -s tests -v
+python verify_isolated.py
+```
+
+`verify_isolated.py` 使用一次性的 `CODEX_HOME`，不会修改真实的 `~/.codex` 目录。
+
+### 详细操作说明
+
+#### 开始前
+
+- 仅打开切换器、编辑 Profile、保存 API key、列出模型或测试 API 时，不需要关闭 Codex Desktop。
+- 点击 **Apply to Codex** 或 **Restore original / Native** 前，应先等待当前 Codex 任务结束并保存未完成的工作。切换器可能强制关闭并重启 Codex Desktop，正在生成的回答、命令或文件编辑会被中断。
+- 第一次使用时，最稳妥的做法是先通过 Provider 测试，再手动关闭 Codex Desktop，然后应用配置。
+- Provider 切换不会迁移当前对话。每次应用或恢复 Provider 后，都应新建 Codex 对话。
+
+#### 第一次配置 DeepSeek V4 Flash
+
+1. 运行 `CodexProviderSwitcher.exe`。
+
+2. 在 **Profile** 下拉框中选择 `deepseek`。表单应显示类似内容：
+
+   ```text
+   Profile ID: deepseek
+   Display name: DeepSeek Official
+   Base URL: https://api.deepseek.com
+   Model ID: deepseek-v4-flash
+   Model display name: DeepSeek V4 Flash
+   Context window: 1048576
+   Reasoning levels: high,low,max
+   ```
+
+3. 在 **API key** 输入框中粘贴 DeepSeek API key。输入内容会被遮蔽。保存后，key 使用 Windows DPAPI 为当前 Windows 用户加密，不会以明文写入 Codex `config.toml`。
+
+4. 点击 **Save profile**。保存成功后，Diagnostics 区域应显示类似信息：
+
+   ```text
+   Saved profile deepseek; key is DPAPI-encrypted for the current Windows user
+   ```
+
+5. 点击 **Test Responses**。程序会提示该操作将发送一个很小、但可能产生费用的 API 请求。确认可以接受后再继续。
+
+   测试调用：
+
+   ```text
+   https://api.deepseek.com/responses
+   ```
+
+   成功结果类似：
+
+   ```text
+   Responses compatible: HTTP 200; response status=completed
+   ```
+
+   如果测试失败，不要应用该 Profile。先检查 API key、模型 ID、端点、账户余额及 Diagnostics 中的完整错误信息。
+
+6. 等待 Codex 中正在运行的任务结束，最好手动完全退出 Codex Desktop。
+
+7. 点击 **Apply to Codex**。切换器将：
+
+   - 保留 MCP、Computer Use、插件、项目 trust、sandbox、hooks 和 features 等非托管设置；
+   - 创建该 Profile 独立的模型目录；
+   - 设置必要的 Provider、模型、认证和 catalog 字段；
+   - 请求重启 Codex Desktop。
+
+   应用成功时，Diagnostics 信息类似：
+
+   ```text
+   Applied DeepSeek Official/deepseek-v4-flash.
+   Codex Desktop restart requested.
+   Start a new Codex conversation.
+   ```
+
+8. Codex Desktop 重启后，新建一个对话。不要继续切换前正在使用的对话。Desktop 对自定义 Provider 的模型标签可能只显示通用名称；API 请求成功和 Provider 后台的用量记录，比模型自报身份更可靠。
+
+#### 添加自定义 Responses API Provider
+
+1. 点击 **New custom**。
+
+2. 填写表单。通用示例：
+
+   ```text
+   Profile ID: example-provider
+   Display name: Example Provider
+   Base URL: https://api.example.com/v1
+   API key: 你的 Provider API key
+   Model ID: provider-model-id
+   Model display name: Provider Model
+   Context window: Provider 文档中的实际值
+   Reasoning levels: high
+   ```
+
+   字段规则：
+
+   - **Profile ID** 只能包含英文字母、数字、下划线和连字符。
+   - **Base URL** 通常填写到 `/v1` 等 API 根路径，不要追加 `/responses`。
+   - 远程 Provider 必须使用 HTTPS。只有 `localhost` 或 `127.0.0.1` 允许 HTTP。
+   - **Model ID** 必须是 Provider API 实际使用的模型标识，不能只填营销展示名称。
+   - Context window 应采用 Provider 文档给出的数值，不要假定所有模型都支持一百万 tokens。
+   - 如果尚未验证 reasoning level，先只填 `high`。
+
+3. 点击 **Save profile**。
+
+4. 点击 **List models**，程序将调用 `GET <Base URL>/models`。确认需要的 Model ID 出现在结果中。部分兼容 Provider 不提供 `/models`；这种情况下，应通过 Provider 官方文档核对 Model ID。
+
+5. 点击 **Test Responses**。只有 Responses 测试成功后才应用 Profile。
+
+   如果接口返回 `404`、拒绝 Responses 请求结构，或只支持 Chat Completions，则不要应用。当前 MVP 不提供 Chat Completions 到 Responses 的转换。
+
+6. 结束当前 Codex 任务，应用 Profile，等待 Codex Desktop 重启，然后新建对话。
+
+#### 恢复 Native Codex
+
+1. 等待第三方 Provider 正在执行的任务结束。
+2. 打开应用该 Provider 时使用的同一个 `CodexProviderSwitcher.exe`。
+3. 点击 **Restore original / Native** 并确认。
+4. 等待 Codex Desktop 重启；如果没有自动重启，则手动重新打开。
+5. 新建对话或重新打开 Native Codex 对话。
+
+恢复操作会删除本工具创建的 `model_providers.cps_*` 配置段，并恢复第一次切换前记录的 provider/model/auth/catalog 字段。它不会修改 Native Codex 登录文件、对话数据库、MCP servers、插件、Computer Use 或其他无关设置。
+
+#### 重要安全注意事项
+
+- 第三方 Profile 生效期间，不要移动、重命名或删除 EXE。Codex 会调用该 EXE 的原始路径来获取 DPAPI 保护的 API key。如果文件不可用，第三方认证会失败，但 Native 账户和对话不会被删除。
+- 将 EXE 保存在可信的本地目录。当前发布文件没有 Authenticode 签名，因此 Windows SmartScreen 首次运行时可能警告。
+- 不要在不同 Provider 之间继续同一个对话。Native 账号认证和 API-key Provider 可能显示不同的对话列表，这不一定表示 Native 对话被删除。
+- Codex Desktop 或 CLI 重大升级后，应先重新运行 Provider 测试再应用，因为自定义 Provider 或模型目录格式可能变化。
+- Provider 测试可能产生少量 API 费用。**List models** 通常是只读请求，但实际计费规则由 Provider 决定。
+
+#### 常见问题
+
+| 现象 | 处理方法 |
+|---|---|
+| Responses 测试返回 `401` 或 `403` | 检查 API key、账户权限以及所选模型的访问权限。 |
+| Responses 测试返回 `404` | 检查 Base URL，并确认 Provider 实现了 `/responses`；当前 MVP 不支持仅 Chat Completions 的 Provider。 |
+| 应用成功但 Codex 没有重启 | 完全退出 Codex Desktop 后手动重新打开，并新建对话。 |
+| 移动 EXE 后第三方模式无法认证 | 把 EXE 放回原路径，然后恢复 Native，或从新路径重新应用 Profile。 |
+| 第三方模式中看不到 Native 对话 | 恢复 Native 并重启 Codex；不要直接判断对话已被删除。 |
+| Provider 测试失败 | 不要点击 Apply。保留 Diagnostics 错误用于排查，但绝不要包含 API key。 |
+
+### 本地验证兼容性
+
+- Windows 10 x64
+- Codex Desktop `26.730.8199.0`
+- Codex CLI `0.144.3`
+- Python `3.11.15`
+
+模型目录、DeepSeek Profile 和恢复路径均已由真实 Codex CLI 在隔离 `CODEX_HOME` 中成功解析。
+
+### 许可证
+
+MIT，参见 `LICENSE`。
+
+---
+
+## English
+
 Windows GUI utility for switching Codex Desktop between:
 
 - the original/native Codex configuration;
