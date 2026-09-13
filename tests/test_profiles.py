@@ -19,7 +19,9 @@ class ProfileRepositoryTests(unittest.TestCase):
     def test_deepseek_profile_is_always_available(self):
         profiles = self.repo.list()
         deepseek = next(profile for profile in profiles if profile.profile_id == "deepseek")
-        self.assertEqual(deepseek.model, "deepseek-v4-flash")
+        self.assertEqual(deepseek.model, "deepseek-flash")
+        self.assertEqual(deepseek.display_name, "deepseek-flash")
+        self.assertEqual(deepseek.reasoning_levels, ["low", "high", "max"])
         self.assertEqual(deepseek.context_window, 1048576)
 
     def test_custom_profile_round_trip(self):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from codex_provider_switcher.core import ConfigTransaction
 from codex_provider_switcher.profiles import DEEPSEEK_PROFILE
+from codex_provider_switcher.windows import app_executable, codex_home
 
 
 def run_codex(codex_home: Path, label: str) -> dict:
@@ -30,6 +32,10 @@ def run_codex(codex_home: Path, label: str) -> dict:
 
 
 def main() -> int:
+    live_config = codex_home() / "config.toml"
+    def live_digest():
+        return hashlib.sha256(live_config.read_bytes()).hexdigest() if live_config.exists() else None
+    before = live_digest()
     with tempfile.TemporaryDirectory(prefix="hermes-verify-cps-") as directory:
         home = Path(directory)
         config_path = home / "config.toml"
@@ -42,13 +48,12 @@ def main() -> int:
             'memories = false\n',
             encoding="utf-8",
         )
-        original = config_path.read_text(encoding="utf-8")
         manager = ConfigTransaction(home)
         reports = [run_codex(home, "native")]
 
         manager.apply(
             DEEPSEEK_PROFILE,
-            r"D:\Claude\CodexProviderSwitcher\dist\CodexProviderSwitcher.exe",
+            str(app_executable()),
         )
         applied = config_path.read_text(encoding="utf-8")
         reports.append(run_codex(home, "deepseek"))
@@ -67,8 +72,8 @@ def main() -> int:
             "original_model_restored": 'model = "gpt-5.6-sol"' in restored,
             "unmanaged_mcp_preserved_after_restore": '[mcp_servers.keep]\ncommand = "keep.exe"' in restored,
             "managed_provider_removed": "cps_deepseek" not in restored,
-            "temporary_home_isolated": home != Path.home() / ".codex",
-            "live_config_untouched": original == original,
+            "temporary_home_isolated": home.resolve() != codex_home().resolve(),
+            "live_config_untouched": before == live_digest(),
         }
         print(json.dumps({"reports": reports, "assertions": assertions}, ensure_ascii=False, indent=2))
         return 0 if all(assertions.values()) else 1

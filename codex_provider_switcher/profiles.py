@@ -10,12 +10,12 @@ from .core import ProviderProfile
 
 DEEPSEEK_PROFILE = ProviderProfile(
     profile_id="deepseek",
-    name="DeepSeek Official",
+    name="DeepSeek 官方",
     base_url="https://api.deepseek.com",
-    model="deepseek-v4-flash",
-    display_name="DeepSeek V4 Flash",
+    model="deepseek-flash",
+    display_name="deepseek-flash",
     context_window=1048576,
-    reasoning_levels=["high", "low", "max"],
+    reasoning_levels=["low", "high", "max"],
 )
 
 
@@ -35,7 +35,7 @@ class ProfileRepository:
 
     def save(self, profile: ProviderProfile) -> None:
         if profile.profile_id == "deepseek":
-            raise ValueError("The built-in DeepSeek profile cannot be overwritten")
+            raise ValueError("不能覆盖内置的 DeepSeek 配置")
         profiles = {entry.profile_id: entry for entry in self._load_custom()}
         profiles[profile.profile_id] = profile
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,7 @@ class ProfileRepository:
 
     def delete(self, profile_id: str) -> None:
         if profile_id == "deepseek":
-            raise ValueError("The built-in DeepSeek profile cannot be deleted")
+            raise ValueError("不能删除内置的 DeepSeek 配置")
         remaining = [entry for entry in self._load_custom() if entry.profile_id != profile_id]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(

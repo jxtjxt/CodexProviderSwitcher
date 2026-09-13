@@ -14,6 +14,7 @@ EXE = Path(__file__).resolve().parents[1] / "dist" / "CodexProviderSwitcher.exe"
 
 
 class FrozenExecutableTests(unittest.TestCase):
+    @unittest.skipUnless(EXE.exists(), "Build the executable to run frozen authentication integration")
     def test_auth_subcommand_reads_secret_from_isolated_codex_home(self):
         self.assertTrue(EXE.exists(), EXE)
         with tempfile.TemporaryDirectory() as directory:

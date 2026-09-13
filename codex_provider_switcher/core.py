@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -30,11 +31,11 @@ class ProviderProfile:
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,48}", self.profile_id):
-            raise ValueError("Profile id may contain only letters, numbers, underscore, and hyphen")
+            raise ValueError("配置 ID 须为 1–48 位英文字母、数字、下划线或连字符")
         if not self.model.strip():
-            raise ValueError("Model id is required")
+            raise ValueError("请填写模型 ID")
         if self.context_window <= 0:
-            raise ValueError("Context window must be positive")
+            raise ValueError("上下文窗口必须为正整数")
         self.base_url = normalize_base_url(self.base_url)
 
 
@@ -42,12 +43,12 @@ def normalize_base_url(value: str) -> str:
     value = value.strip().rstrip("/")
     parsed = urlparse(value)
     if parsed.username or parsed.password:
-        raise ValueError("Base URL must not contain credentials")
+        raise ValueError("API 地址不得包含用户名或密码")
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("Base URL must be an absolute HTTP(S) URL")
+        raise ValueError("API 地址必须为完整的 HTTP(S) URL")
     loopback = parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
     if parsed.scheme != "https" and not loopback:
-        raise ValueError("Remote provider Base URL must use HTTPS")
+        raise ValueError("远程 API 地址必须使用 HTTPS")
     return value
 
 
@@ -183,11 +184,53 @@ class ConfigTransaction:
     def _read(self) -> str:
         return self.config_path.read_text(encoding="utf-8-sig") if self.config_path.exists() else ""
 
-    def _write_atomic(self, path: Path, content: str) -> None:
+    def _write_atomic(self, path: Path, content: str | bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(path.name + ".tmp")
-        temporary.write_text(content, encoding="utf-8", newline="\n")
-        os.replace(temporary, path)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent, suffix=".tmp", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(content.encode("utf-8") if isinstance(content, str) else content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _commit(self, changes: dict[Path, str], state: dict) -> None:
+        previous_state = self._load_state()
+        state_text = self.state_path.read_bytes() if self.state_path.exists() else None
+        originals = {path: path.read_bytes() if path.exists() else None for path in changes}
+        # Persist the native baseline and both provider IDs BEFORE any mutation.
+        # After process termination, Restore can clean up either side of the switch.
+        pending = dict(state)
+        pending["owned_provider_ids"] = sorted(set(
+            (previous_state or {}).get("owned_provider_ids", []) + state.get("owned_provider_ids", [])
+        ))
+        pending["active_profile"] = (previous_state or {}).get("active_profile")
+        pending["pending"] = True
+        self._write_atomic(self.state_path, json.dumps(pending, ensure_ascii=False, indent=2) + "\n")
+        written = []
+        try:
+            for path, content in changes.items():
+                self._write_atomic(path, content)
+                written.append(path)
+            self._write_atomic(self.state_path, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+        except Exception as exc:
+            try:
+                for path in reversed(written):
+                    if originals[path] is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        self._write_atomic(path, originals[path])
+                if state_text is None:
+                    self.state_path.unlink(missing_ok=True)
+                else:
+                    self._write_atomic(self.state_path, state_text)
+            except Exception as rollback_error:
+                raise OSError("写入失败且自动回滚未完成；恢复记录已保留。请解决文件写入问题后点击“恢复原始配置”。") from rollback_error
+            raise OSError("写入失败，已回滚到操作前的配置。") from exc
 
     def _load_state(self) -> dict | None:
         if not self.state_path.exists():
@@ -214,7 +257,6 @@ class ConfigTransaction:
         cleaned = _remove_sections(current, owned) if owned else current
         catalog_path = self.catalog_dir / f"{profile.profile_id}.json"
         catalog = json.dumps(build_catalog(profile), ensure_ascii=False, indent=2) + "\n"
-        self._write_atomic(catalog_path, catalog)
 
         provider_id = f"cps_{profile.profile_id}"
         values = {
@@ -242,8 +284,8 @@ class ConfigTransaction:
         )
         state["owned_provider_ids"] = [provider_id]
         state["active_profile"] = asdict(profile)
-        self._write_atomic(self.config_path, next_text)
-        self._write_atomic(self.state_path, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+        state.pop("pending", None)
+        self._commit({catalog_path: catalog, self.config_path: next_text}, state)
 
     def restore(self) -> None:
         state = self._load_state()
@@ -253,7 +295,7 @@ class ConfigTransaction:
         prefixes = tuple(f"model_providers.{provider_id}" for provider_id in state.get("owned_provider_ids", []))
         cleaned = _remove_sections(current, prefixes)
         restored = _replace_top_level(cleaned, state.get("baseline", {}))
-        self._write_atomic(self.config_path, restored)
         state["active_profile"] = None
         state["owned_provider_ids"] = []
-        self._write_atomic(self.state_path, json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+        state.pop("pending", None)
+        self._commit({self.config_path: restored}, state)

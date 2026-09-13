@@ -19,7 +19,7 @@ def app_executable() -> Path:
 
 def restart_codex_desktop() -> tuple[bool, str]:
     if os.name != "nt":
-        return False, "Desktop restart is supported only on Windows"
+        return False, "仅支持在 Windows 上重启 Codex"
     creation_flags = 0x08000000
     subprocess.run(
         ["taskkill.exe", "/IM", "Codex.exe", "/T", "/F"],
@@ -35,4 +35,4 @@ def restart_codex_desktop() -> tuple[bool, str]:
         creationflags=creation_flags,
         check=False,
     )
-    return result.returncode == 0, "Codex Desktop restart requested" if result.returncode == 0 else "Could not launch Codex Desktop"
+    return result.returncode == 0, "已请求重启 Codex" if result.returncode == 0 else "无法启动 Codex，请手动打开"

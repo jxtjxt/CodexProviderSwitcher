@@ -4,10 +4,19 @@
 
 ## 简体中文
 
+### 中文界面与安全更新
+
+- 主窗口、字段、按钮、提示框和运行日志已改为简体中文；模型 ID、API 协议名称和推理级别值保持原样。
+- “应用到 Codex”和“恢复原始配置”会先提示强制关闭与重启的影响，默认取消；取消不会修改配置或重启程序。
+- API 探测从第一个请求起禁止自动重定向，每一跳校验协议、主机和端口，最多跟随 5 次同源重定向。Responses POST 仅接受保持方法与请求体的 307/308。
+- 应用或恢复前先保存恢复记录。普通写入失败会回滚配置、模型目录和状态文件；若程序意外退出或回滚失败，请解决文件写入问题后点击“恢复原始配置”。
+- “Responses 基础测试通过”仅表示最小请求通过，不代表流式输出、工具调用等所有能力均已验证。
+- 单元测试使用临时目录和本机 HTTP 服务，不发送真实 Provider 请求。未构建 EXE 时跳过打包认证测试；构建后再次运行测试以验证 EXE 的命令认证。
+
 Codex Provider Switcher 是一个 Windows 图形界面工具，用于在以下模式之间切换 Codex Desktop：
 
 - 原始/Native Codex 配置；
-- 通过 DeepSeek 原生 Responses API 使用 DeepSeek V4 Flash；
+- 通过 DeepSeek 原生 Responses API 使用 deepseek-flash；
 - 任意实现 Codex 兼容 Responses API 的第三方 Provider。
 
 ### 安全设计
@@ -24,7 +33,7 @@ Codex Provider Switcher 是一个 Windows 图形界面工具，用于在以下�
 
 已支持：
 
-- DeepSeek V4 Flash；
+- deepseek-flash；
 - 自定义 Responses-compatible API；
 - `/models` 模型发现；
 - 最小 Responses 兼容性测试；
@@ -70,35 +79,35 @@ python verify_isolated.py
 #### 开始前
 
 - 仅打开切换器、编辑 Profile、保存 API key、列出模型或测试 API 时，不需要关闭 Codex Desktop。
-- 点击 **Apply to Codex** 或 **Restore original / Native** 前，应先等待当前 Codex 任务结束并保存未完成的工作。切换器可能强制关闭并重启 Codex Desktop，正在生成的回答、命令或文件编辑会被中断。
+- 点击 **应用到 Codex** 或 **恢复原始配置** 前，应先等待当前 Codex 任务结束并保存未完成的工作。切换器可能强制关闭并重启 Codex Desktop，正在生成的回答、命令或文件编辑会被中断。
 - 第一次使用时，最稳妥的做法是先通过 Provider 测试，再手动关闭 Codex Desktop，然后应用配置。
 - Provider 切换不会迁移当前对话。每次应用或恢复 Provider 后，都应新建 Codex 对话。
 
-#### 第一次配置 DeepSeek V4 Flash
+#### 第一次配置 deepseek-flash
 
 1. 运行 `CodexProviderSwitcher.exe`。
 
 2. 在 **Profile** 下拉框中选择 `deepseek`。表单应显示类似内容：
 
    ```text
-   Profile ID: deepseek
-   Display name: DeepSeek Official
+   配置 ID: deepseek
+   服务商名称: DeepSeek 官方
    Base URL: https://api.deepseek.com
-   Model ID: deepseek-v4-flash
-   Model display name: DeepSeek V4 Flash
-   Context window: 1048576
-   Reasoning levels: high,low,max
+   模型 ID: deepseek-flash
+   模型显示名称: deepseek-flash
+   上下文窗口: 1048576
+   推理级别: low, high, max
    ```
 
 3. 在 **API key** 输入框中粘贴 DeepSeek API key。输入内容会被遮蔽。保存后，key 使用 Windows DPAPI 为当前 Windows 用户加密，不会以明文写入 Codex `config.toml`。
 
-4. 点击 **Save profile**。保存成功后，Diagnostics 区域应显示类似信息：
+4. 点击 **保存配置**。保存成功后，运行日志 区域应显示类似信息：
 
    ```text
    Saved profile deepseek; key is DPAPI-encrypted for the current Windows user
    ```
 
-5. 点击 **Test Responses**。程序会提示该操作将发送一个很小、但可能产生费用的 API 请求。确认可以接受后再继续。
+5. 点击 **测试 Responses**。程序会提示该操作将发送一个很小、但可能产生费用的 API 请求。确认可以接受后再继续。
 
    测试调用：
 
@@ -112,21 +121,21 @@ python verify_isolated.py
    Responses compatible: HTTP 200; response status=completed
    ```
 
-   如果测试失败，不要应用该 Profile。先检查 API key、模型 ID、端点、账户余额及 Diagnostics 中的完整错误信息。
+   如果测试失败，不要应用该 Profile。先检查 API key、模型 ID、端点、账户余额及 运行日志 中的完整错误信息。
 
 6. 等待 Codex 中正在运行的任务结束，最好手动完全退出 Codex Desktop。
 
-7. 点击 **Apply to Codex**。切换器将：
+7. 点击 **应用到 Codex**。切换器将：
 
    - 保留 MCP、Computer Use、插件、项目 trust、sandbox、hooks 和 features 等非托管设置；
    - 创建该 Profile 独立的模型目录；
    - 设置必要的 Provider、模型、认证和 catalog 字段；
    - 请求重启 Codex Desktop。
 
-   应用成功时，Diagnostics 信息类似：
+   应用成功时，运行日志 信息类似：
 
    ```text
-   Applied DeepSeek Official/deepseek-v4-flash.
+   Applied DeepSeek 官方/deepseek-flash.
    Codex Desktop restart requested.
    Start a new Codex conversation.
    ```
@@ -135,35 +144,35 @@ python verify_isolated.py
 
 #### 添加自定义 Responses API Provider
 
-1. 点击 **New custom**。
+1. 点击 **新建自定义**。
 
 2. 填写表单。通用示例：
 
    ```text
-   Profile ID: example-provider
-   Display name: Example Provider
+   配置 ID: example-provider
+   服务商名称: Example Provider
    Base URL: https://api.example.com/v1
    API key: 你的 Provider API key
-   Model ID: provider-model-id
-   Model display name: Provider Model
-   Context window: Provider 文档中的实际值
-   Reasoning levels: high
+   模型 ID: provider-model-id
+   模型显示名称: Provider Model
+   上下文窗口: Provider 文档中的实际值
+   推理级别: high
    ```
 
    字段规则：
 
-   - **Profile ID** 只能包含英文字母、数字、下划线和连字符。
+   - **配置 ID** 只能包含英文字母、数字、下划线和连字符。
    - **Base URL** 通常填写到 `/v1` 等 API 根路径，不要追加 `/responses`。
    - 远程 Provider 必须使用 HTTPS。只有 `localhost` 或 `127.0.0.1` 允许 HTTP。
-   - **Model ID** 必须是 Provider API 实际使用的模型标识，不能只填营销展示名称。
-   - Context window 应采用 Provider 文档给出的数值，不要假定所有模型都支持一百万 tokens。
+   - **模型 ID** 必须是 Provider API 实际使用的模型标识，不能只填营销展示名称。
+   - 上下文窗口 应采用 Provider 文档给出的数值，不要假定所有模型都支持一百万 tokens。
    - 如果尚未验证 reasoning level，先只填 `high`。
 
-3. 点击 **Save profile**。
+3. 点击 **保存配置**。
 
-4. 点击 **List models**，程序将调用 `GET <Base URL>/models`。确认需要的 Model ID 出现在结果中。部分兼容 Provider 不提供 `/models`；这种情况下，应通过 Provider 官方文档核对 Model ID。
+4. 点击 **获取模型列表**，程序将调用 `GET <Base URL>/models`。确认需要的 模型 ID 出现在结果中。部分兼容 Provider 不提供 `/models`；这种情况下，应通过 Provider 官方文档核对 模型 ID。
 
-5. 点击 **Test Responses**。只有 Responses 测试成功后才应用 Profile。
+5. 点击 **测试 Responses**。只有 Responses 测试成功后才应用 Profile。
 
    如果接口返回 `404`、拒绝 Responses 请求结构，或只支持 Chat Completions，则不要应用。当前 MVP 不提供 Chat Completions 到 Responses 的转换。
 
@@ -173,7 +182,7 @@ python verify_isolated.py
 
 1. 等待第三方 Provider 正在执行的任务结束。
 2. 打开应用该 Provider 时使用的同一个 `CodexProviderSwitcher.exe`。
-3. 点击 **Restore original / Native** 并确认。
+3. 点击 **恢复原始配置** 并确认。
 4. 等待 Codex Desktop 重启；如果没有自动重启，则手动重新打开。
 5. 新建对话或重新打开 Native Codex 对话。
 
@@ -185,7 +194,7 @@ python verify_isolated.py
 - 将 EXE 保存在可信的本地目录。当前发布文件没有 Authenticode 签名，因此 Windows SmartScreen 首次运行时可能警告。
 - 不要在不同 Provider 之间继续同一个对话。Native 账号认证和 API-key Provider 可能显示不同的对话列表，这不一定表示 Native 对话被删除。
 - Codex Desktop 或 CLI 重大升级后，应先重新运行 Provider 测试再应用，因为自定义 Provider 或模型目录格式可能变化。
-- Provider 测试可能产生少量 API 费用。**List models** 通常是只读请求，但实际计费规则由 Provider 决定。
+- Provider 测试可能产生少量 API 费用。**获取模型列表** 通常是只读请求，但实际计费规则由 Provider 决定。
 
 #### 常见问题
 
@@ -196,7 +205,7 @@ python verify_isolated.py
 | 应用成功但 Codex 没有重启 | 完全退出 Codex Desktop 后手动重新打开，并新建对话。 |
 | 移动 EXE 后第三方模式无法认证 | 把 EXE 放回原路径，然后恢复 Native，或从新路径重新应用 Profile。 |
 | 第三方模式中看不到 Native 对话 | 恢复 Native 并重启 Codex；不要直接判断对话已被删除。 |
-| Provider 测试失败 | 不要点击 Apply。保留 Diagnostics 错误用于排查，但绝不要包含 API key。 |
+| Provider 测试失败 | 不要点击 Apply。保留 运行日志 错误用于排查，但绝不要包含 API key。 |
 
 ### 本地验证兼容性
 
@@ -214,11 +223,20 @@ MIT，参见 `LICENSE`。
 ---
 
 ## English
+### Chinese UI and safety update
+
+The GUI now uses Simplified Chinese. Main actions: 保存配置 (Save profile), 获取模型列表 (List models), 测试 Responses (Test Responses), 应用到 Codex (Apply), 恢复原始配置 (Restore).
+
+Apply and Restore now require an explicit confirmation, defaulting to cancellation, before any configuration mutation or forced restart. Every probe redirect is checked before sending credentials; only same-origin redirects are allowed, with at most five hops. POST requests only follow 307/308 while retaining their method and body.
+
+Recovery metadata is persisted before configuration changes. Ordinary write errors roll back modified files; after an interrupted operation or failed rollback, fix file access and use Restore with the retained recovery record. A successful basic Responses probe does not establish streaming or tool-calling compatibility.
+
+Tests use temporary directories and local HTTP servers. Frozen authentication tests are skipped until the EXE is built; rerun the suite after building.
 
 Windows GUI utility for switching Codex Desktop between:
 
 - the original/native Codex configuration;
-- DeepSeek V4 Flash through DeepSeek's native Responses API;
+- deepseek-flash through DeepSeek's native Responses API;
 - any third-party provider that implements a Codex-compatible Responses API.
 
 ## Security model
@@ -235,7 +253,7 @@ Windows GUI utility for switching Codex Desktop between:
 
 Supported:
 
-- DeepSeek V4 Flash;
+- deepseek-flash;
 - custom Responses-compatible APIs;
 - `/models` discovery;
 - minimal Responses compatibility probe;
@@ -285,7 +303,7 @@ python verify_isolated.py
 - For the safest first use, close Codex Desktop manually after the provider test passes and before applying the profile.
 - Switching providers does not migrate an active conversation. Always start a new Codex conversation after applying or restoring a provider.
 
-### First-time DeepSeek V4 Flash setup
+### First-time deepseek-flash setup
 
 1. Run `CodexProviderSwitcher.exe`.
 
@@ -295,10 +313,10 @@ python verify_isolated.py
    Profile ID: deepseek
    Display name: DeepSeek Official
    Base URL: https://api.deepseek.com
-   Model ID: deepseek-v4-flash
-   Model display name: DeepSeek V4 Flash
+   Model ID: deepseek-flash
+   Model display name: deepseek-flash
    Context window: 1048576
-   Reasoning levels: high,low,max
+   Reasoning levels: low, high, max
    ```
 
 3. Paste the DeepSeek API key into **API key**. The field is masked. When saved, the key is encrypted with Windows DPAPI for the current Windows user; it is not written in plaintext to Codex `config.toml`.
@@ -337,7 +355,7 @@ python verify_isolated.py
    A successful apply message looks similar to:
 
    ```text
-   Applied DeepSeek Official/deepseek-v4-flash.
+   Applied DeepSeek Official/deepseek-flash.
    Codex Desktop restart requested.
    Start a new Codex conversation.
    ```
